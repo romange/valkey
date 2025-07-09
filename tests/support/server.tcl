@@ -141,7 +141,7 @@ proc ping_server {host port} {
     set retval 0
     if {[catch {
         if {$::tls} {
-            set fd [::tls::socket $host $port] 
+            set fd [::tls::socket $host $port]
         } else {
             set fd [socket $host $port]
         }
@@ -285,8 +285,14 @@ proc tags {tags code} {
 proc create_server_config_file {filename config config_lines} {
     set fp [open $filename w+]
     foreach directive [dict keys $config] {
-        puts -nonewline $fp "$directive "
-        puts $fp [dict get $config $directive]
+        puts -nonewline $fp "--$directive"
+        set val [dict get $config $directive]
+        if {[llength $val] == 0} {
+            # If the value is empty, we just write the directive.
+            puts $fp ""
+            continue
+        }
+        puts $fp "=$val"
     }
     foreach {config_line_directive config_line_args} $config_lines {
         puts $fp "$config_line_directive $config_line_args"
@@ -301,6 +307,8 @@ proc spawn_server {executable config_file stdout stderr args} {
         lappend cmd {*}$args
     }
 
+    puts "Spawning server with command: $cmd\n"
+    exec /usr/bin/touch $stderr
     if {$::valgrind} {
         set pid [exec valgrind --track-origins=yes --trace-children=yes --suppressions=[pwd]/src/valgrind.sup --show-reachable=no --show-possibly-lost=no --leak-check=full {*}$cmd >> $stdout 2>> $stderr &]
     } elseif ($::stack_logging) {
@@ -309,7 +317,7 @@ proc spawn_server {executable config_file stdout stderr args} {
         # ASAN_OPTIONS environment variable is for address sanitizer. If a test
         # tries to allocate huge memory area and expects allocator to return
         # NULL, address sanitizer throws an error without this setting.
-        set pid [exec /usr/bin/env ASAN_OPTIONS=allocator_may_return_null=1 {*}$cmd >> $stdout 2>> $stderr &]
+        set pid [exec /usr/bin/env ASAN_OPTIONS=allocator_may_return_null=1 {*}$cmd 2>> $stdout &]
     }
 
     if {$::wait_server} {
@@ -328,8 +336,11 @@ proc wait_server_started {executable config_file stdout stderr pid} {
     set checkperiod 100; # Milliseconds
     set maxiter [expr {120*1000/$checkperiod}] ; # Wait up to 2 minutes.
     set port_busy 0
+    puts "Waiting for server $executable to start (pid $pid)..."
     while 1 {
-        if {[regexp -- " PID: $pid.*Server initialized" [exec cat $stdout]]} {
+        set valout [exec cat $stdout]
+        puts "$stdout: $valout"
+        if {[regexp -- " Starting dragonfly" $valout]} {
             break
         }
         after $checkperiod
@@ -431,7 +442,7 @@ proc run_external_server_test {code overrides} {
     }
 
     set srv [lpop ::servers]
-    
+
     if {[dict exists $srv "client"]} {
         [dict get $srv "client"] close
     }
@@ -446,7 +457,7 @@ proc start_server {options {code undefined}} {
     set args {}
     set keep_persistence false
     set config_lines {}
-    set start_other_server 0
+    set start_other_server 1
     set old_singledb $::singledb
 
     # Wait for the server to be ready and check for server liveness/client connectivity before starting the test.
@@ -613,6 +624,7 @@ proc start_server {options {code undefined}} {
 
     # We need a loop here to retry with different ports.
     set server_started 0
+
     while {$server_started == 0} {
         if {$::verbose} {
             puts -nonewline "=== ($tags) Starting server on ${::host}:${port} "
@@ -620,7 +632,7 @@ proc start_server {options {code undefined}} {
 
         send_data_packet $::test_server_fd "server-spawning" "port $port"
 
-        set pid [spawn_server $executable $config_file $stdout $stderr $args]
+        set pid [spawn_server $executable --flagfile=$config_file $stdout $stderr $args]
 
         # check that the server actually started
         set port_busy [wait_server_started $executable $config_file $stdout $stderr $pid]
@@ -666,7 +678,8 @@ proc start_server {options {code undefined}} {
         }
         set server_started 1
     }
-
+    
+    puts "Server started on ${::host}:${port} (pid $pid)"
     # setup properties to be able to initialize a client object
     set port_param [expr $::tls ? {"tls-port"} : {"port"}]
     set host $::host
@@ -700,8 +713,9 @@ proc start_server {options {code undefined}} {
 
         if {$wait_ready} {
             while 1 {
+                puts "Waiting for server to be ready..."
                 # check that the server actually started and is ready for connections
-                if {[count_message_lines $stdout "Ready to accept"] > $previous_ready_count} {
+                if {[count_message_lines $stdout "AcceptServer - listening on"] > $previous_ready_count} {
                     break
                 }
                 after 10
@@ -834,7 +848,7 @@ proc restart_server {level wait_ready rotate_logs {reconnect 1} {shutdown sigter
     set executable [dict get $srv "executable"]
     set config_file [dict get $srv "config_file"]
 
-    set pid [spawn_server $executable $config_file $stdout $stderr {}]
+    set pid [spawn_server $executable --flagfile=$config_file $stdout $stderr {}]
 
     # check that the server actually started
     wait_server_started $executable $config_file $stdout $stderr $pid

@@ -184,6 +184,22 @@ proc r {args} {
         set level [lindex $args 0]
         set args [lrange $args 1 end]
     }
+    set first [lindex $args 0]
+    set second [lindex $args 1]
+    set third [lindex $args 2]
+    if {$first eq "debug" && $second eq "set-active-expire"} {
+        return
+    }
+
+    if {$first eq "config" && $second eq "set" && $third eq "oom-score-adj-values"} {
+        return
+    }
+
+    if {$first eq "ACL" && $second eq "SETUSER"} {
+        return
+    }
+
+    # puts "level $level first $first"
     [srv $level "client"] {*}$args
 }
 

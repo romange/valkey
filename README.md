@@ -1,3 +1,13 @@
+# To run with Dragonfly
+
+Use the following:
+
+```
+./runtest --verbose --ignore-encoding  --other-server-path /home/roman/projects/dragonfly/build-opt/dragonfly  --single unit/expire
+```
+
+
+
 [![codecov](https://codecov.io/gh/valkey-io/valkey/graph/badge.svg?token=KYYSJAYC5F)](https://codecov.io/gh/valkey-io/valkey)
 
 This project was forked from the open source Redis project right before the transition to their new source available licenses.
